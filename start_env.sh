@@ -32,6 +32,34 @@ function parse_os_version() {
     fi
 }
 
+function docker_mount_params() {
+    # $1: warning if not exists
+    # $2: warning message
+    # $3: output var
+    # $@: dirs
+    _warning="$1"
+    shift
+    _warning_message="$1"
+    shift
+    _out="$1"
+    shift
+
+    # generate params
+    _mount_params=""
+    for _dir in $@;do
+        if [ -e "$_dir" ];then
+            _mount_params="${_mount_params} -v $_dir:$_dir"
+        else
+            if [ "$_warning" == "true" ]; then
+                echo -e "\e[93mWARNING!! $_warning_message \"$_dir\"\e[0m"
+            fi
+        fi
+    done
+
+    # output
+    eval $_out="\$_mount_params"
+}
+
 # init parameters
 PARAM_OS_VERSION=20.04
 AVAILABLE_VERSIONS=($(docker image list | awk '$1=="aosp_env"{print $2}' | sort))
@@ -80,14 +108,13 @@ PREBUILD_DIRS=(
     "/pkg"
     "/usr/qcom"
 )
-MOUNT_PREBUILD=""
-for _dir in ${PREBUILD_DIRS[@]};do
-    if [ -d "$_dir" ];then
-        MOUNT_PREBUILD="${MOUNT_PREBUILD} -v $_dir:$_dir"
-    else
-        echo -e "\e[93mWARNING: prebuild \"$_dir\" not exits. You may not able to build some projects!!\e[0m"
-    fi
-done
+docker_mount_params true "prebuild not exits. You may not able to build some projects. path:" MOUNT_PREBUILD ${PREBUILD_DIRS[@]}
+
+# mount repo
+REPO_PATH=(
+    "/usr/bin/repo"
+)
+docker_mount_params false "" MOUNT_REPO ${REPO_PATH[@]}
 
 # start docker
 echo ">> starting env with os version ${PARAM_OS_VERSION}"
@@ -99,6 +126,7 @@ docker run --rm -it \
            -e ENV_HOME="${HOME}" \
            -v "${HOME}":"${HOME}" \
            ${MOUNT_PREBUILD} \
+           ${MOUNT_REPO} \
            --network host \
            --hostname "${CONTAINER_HOSTNAME}" \
            --ulimit nofile=65536:65536 \
